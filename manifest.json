@@ -1,0 +1,8 @@
+{
+    "name": "Multiple Multi-Line Type Fields",
+    "package": "multiple_multi_line_type_fields",
+    "description": "An Anki add-on that creates a development framework for creating and displaying new input kinds, whereas Anki natively supports one single-line input per card.",
+    "authors": ["DaedalusIndigo"],
+    "version": "0.1.0",
+    "conflicts": ["1018107736", "711285688"]
+}
