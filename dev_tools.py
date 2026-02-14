@@ -72,7 +72,7 @@ class input_kinds:
         ),
         afmt = card_format("<div class='typeans-comparison typeans-comparison-single'>{comparison}</div>"),
         compare_modes = {
-            "": compare_single
+            "_": compare_single
         },
         examples = ["example", "sample"]
     )
@@ -83,7 +83,7 @@ class input_kinds:
         ),
         afmt = card_format("<div class='typeans-comparison typeans-comparison-multi'>{comparison}</div>"),
         compare_modes = {
-            "": compare_multi_byline,
+            "_": compare_multi_byline,
             "delimited": compare_multi_delimited
         },
         examples = ["this\nis\nan\nexample", "that\nis\na\nsample"]

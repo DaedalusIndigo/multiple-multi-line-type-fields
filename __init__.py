@@ -156,7 +156,7 @@ def MMTF_typeAnsAnswerFilter(self: reviewer.Reviewer, buf: str) -> str:
    for i, answer in enumerate(self.typedAnswer):
       thisInfo: input_instance = self.typeAnsInfo[i]
       thisInfo.provided = answer
-      compare_name = thisInfo.args[1] if len(thisInfo.args) > 1 else ""
+      compare_name = thisInfo.args[1] if len(thisInfo.args) > 1 else "_"
       thisCompare = thisInfo.kind.compare_modes[compare_name]
       if thisCompare:
          outputs.append(thisCompare(thisInfo, combining = ("nc" in thisInfo.args)))
