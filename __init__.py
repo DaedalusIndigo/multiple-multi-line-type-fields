@@ -152,6 +152,7 @@ def MMTF_typeAnsAnswerFilter(self: reviewer.Reviewer, buf: str) -> str:
       re.sub(self.typeAnsPat, replacement, buf, count=1)
 
    outputs = []
+   default_styles = ""
    for i, answer in enumerate(self.typedAnswer):
       thisInfo: input_instance = self.typeAnsInfo[i]
       thisInfo.provided = answer
@@ -159,24 +160,23 @@ def MMTF_typeAnsAnswerFilter(self: reviewer.Reviewer, buf: str) -> str:
       thisCompare = thisInfo.kind.compare_modes[compare_name]
       if thisCompare:
          outputs.append(thisCompare(thisInfo, combining = ("nc" in thisInfo.args)))
+         style = thisInfo.kind.afmt.style
+         if style is not None and style.strip() != "":
+            default_styles += style + "\n\n"
       else:
          outputs.append(f"(MMTF) Could not find comparison mode '{compare_name}' of input kind")
 
    def repl(match, count = [0]):
       i = count[0]
-      count[0] += 1
-      return """
-      <div class="typeans-comparison">
-         {}
-      </div>
-      """.format(outputs[i] if i < len(outputs) else "(MMTF) Could not retrieve answer to compare")
+      return self.typeAnsInfo[i].kind.afmt.element(self, *thisInfo.args, body = outputs[i] if i < len(outputs) else "(MMTF) Could not retrieve answer to compare")
       
    buf = re.sub(self.typeAnsPat, repl, buf) + """
    <style>
-   @layer { .typeans-comparison { font-family: monospace; text-align: center; }}
+   @layer {{ .typeans-comparison {{ font-family: monospace; text-align: center; }} {} }}
    </style>
-   """
+   """.format(default_styles)
 
+   print(buf)
    return buf
 
 def MMTF_maybeTextInput(self, txt: str, type: str = "q"):

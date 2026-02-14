@@ -13,8 +13,8 @@ class card_format:
     _element: str | Callable
     style: str | None = None
     
-    def element(self, context, *args) -> str:
-        return self._element(context, *args) if callable(self._element) else self._element.format(context, *args)
+    def element(self, context, *args, body=None) -> str:
+        return self._element(context, *args) if callable(self._element) else self._element.format(context, *args, comparison=body)
 
 @dataclass
 class example:
@@ -61,7 +61,7 @@ def compare_multi_byline(thisInfo: input_instance, *, combining: bool = True):
         p_line = provided[i] if i < len(provided) else ""
         comparison.append(mw.col.compare_answer(e_line, p_line, combining))
 
-    return "<br>".join(comparison).replace('<br><span id=typearrow>&darr;</span><br>', '<span id=typearrow> → </span>')
+    return "<code id=typeans>" + "<br>".join(comparison).replace('<br><span id=typearrow>&darr;</span><br>', '<span id=typearrow> → </span>').replace("<code id=typeans>", "").replace("</code>", "") + "</code>"
 
 @dataclass
 class input_kinds:
@@ -70,7 +70,7 @@ class input_kinds:
             '<input class="typeans typeans-single" id="typeans" type="text" onkeydown="_typeAnsPress(event);">',
             '.typeans-single {font-family: "Arial"; font-size: 20px; margin: auto;}'
         ),
-        afmt = card_format("{}"),
+        afmt = card_format("<div class='typeans-comparison typeans-comparison-single'>{comparison}</div>"),
         compare_modes = {
             "": compare_single
         },
@@ -81,7 +81,7 @@ class input_kinds:
             '<textarea class="typeans typeans-multi" id="typeans" onkeydown="typeboxAnsPress(event);"></textarea>',
             '.typeans-multi {font-family: "Arial"; font-size: 20px; margin: auto; height: 300px; resize: none;}'
         ),
-        afmt = card_format("{}"),
+        afmt = card_format("<div class='typeans-comparison typeans-comparison-multi'>{comparison}</div>"),
         compare_modes = {
             "": compare_multi_byline,
             "delimited": compare_multi_delimited
