@@ -70,11 +70,12 @@ def MMTF_typeAnsQuestionFilter(self: reviewer.Reviewer, buf: str) -> str:
       clozeIdx = None
 
       field = match.group("field")
-      print(field)
-      thisInfo.args = match.group("args") or ""
-      thisInfo.args = re.split(r'[,\s]+', thisInfo.args)
-      kind_name = thisInfo.args[0]
-      if kind_name is None or kind_name.strip() == "":
+
+      thisInfo.q_args = match.group("args") or ""
+      thisInfo.q_args = re.split(r'[,\s]+', thisInfo.q_args)
+
+      kind_name = thisInfo.q_args[0]
+      if kind_name is None or kind_name.strip() == "" or kind_name == "_":
          kind_name = "single"
 
       try:
@@ -83,14 +84,13 @@ def MMTF_typeAnsQuestionFilter(self: reviewer.Reviewer, buf: str) -> str:
          replace_pattern(f"(MMTF) Could not find input kind '{kind_name}'") # [TRANSLATION REMINDER]
          continue
 
-      # [HOOK REMINDER FOR CUSTOM INPUT PREFIXES]
       # if it's a cloze, extract data
       if field.startswith("cloze:"):
          # get field and cloze position [HOOK REMINDER]
          clozeIdx = self.card.ord + 1
          field = field.split(":")[1]
       if field.startswith("nc:"):
-         thisInfo.args.append("nc")
+         thisInfo.a_args.append("nc")
          field = field.split(":")[1]
 
       for f in self.card.note_type()["flds"]:
@@ -116,8 +116,16 @@ def MMTF_typeAnsQuestionFilter(self: reviewer.Reviewer, buf: str) -> str:
          continue
 
       try:
-         replace_pattern(thisInfo.kind.qfmt.element(self, *thisInfo.args))
+         output = thisInfo.kind.qfmt.element(self, thisInfo.q_args, thisInfo.a_args)
          style = thisInfo.kind.qfmt.style
+
+         for arg in thisInfo.q_args[2:] if len(thisInfo.q_args) > 2 else []:
+            parameter = thisInfo.kind.q_params[arg] if arg in thisInfo.kind.q_params else None
+            if parameter:
+               output, style = parameter(output, style, thisInfo)
+
+         replace_pattern(output + "\n<br>")
+
          if style is not None and style.strip() != "":
             default_styles += style + "\n\n"
 
@@ -152,23 +160,36 @@ def MMTF_typeAnsAnswerFilter(self: reviewer.Reviewer, buf: str) -> str:
       re.sub(self.typeAnsPat, replacement, buf, count=1)
 
    outputs = []
-   default_styles = ""
-   for i, answer in enumerate(self.typedAnswer):
-      thisInfo: input_instance = self.typeAnsInfo[i]
-      thisInfo.provided = answer
-      compare_name = thisInfo.args[1] if len(thisInfo.args) > 1 else "_"
-      thisCompare = thisInfo.kind.compare_modes[compare_name]
-      if thisCompare:
-         outputs.append(thisCompare(thisInfo, combining = ("nc" in thisInfo.args)))
-         style = thisInfo.kind.afmt.style
-         if style is not None and style.strip() != "":
-            default_styles += style + "\n\n"
-      else:
-         outputs.append(f"(MMTF) Could not find comparison mode '{compare_name}' of input kind")
+   default_styles = "" 
 
    def repl(match, count = [0]):
       i = count[0]
-      return self.typeAnsInfo[i].kind.afmt.element(self, *thisInfo.args, body = outputs[i] if i < len(outputs) else "(MMTF) Could not retrieve answer to compare")
+      count[0] += 1
+
+      thisInfo: input_instance = self.typeAnsInfo[i]
+      thisInfo.provided = self.typedAnswer[i]
+
+      thisInfo.a_args = match.group("args") or ""
+      thisInfo.a_args = re.split(r'[,\s]+', thisInfo.a_args)
+
+      compare_name = thisInfo.a_args[0] if len(thisInfo.a_args) > 0 and thisInfo.a_args[0] != "" else "_"
+      thisCompare = thisInfo.kind.compare_modes[compare_name]
+
+      if thisCompare:
+         output = thisCompare(thisInfo, combining = ("nc" in thisInfo.a_args))
+         style = thisInfo.kind.afmt.style
+
+         for arg in thisInfo.a_args[1:] if len(thisInfo.a_args) > 1 else []:
+            parameter = thisInfo.kind.a_params[arg] if arg in thisInfo.kind.a_params else None
+            if parameter:
+               output, style = parameter(output, style, thisInfo, thisCompare)
+         
+         if style is not None and style.strip() != "":
+            default_styles += style + "\n\n"
+
+         return self.typeAnsInfo[i].kind.afmt.element(self, thisInfo.q_args, thisInfo.a_args, body = output if output else "(MMTF) Could not retrieve answer to compare")
+      else:
+         return f"(MMTF) Could not find comparison mode '{compare_name}' of input kind"
       
    buf = re.sub(self.typeAnsPat, repl, buf) + """
    <style>

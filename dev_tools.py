@@ -13,8 +13,8 @@ class card_format:
     _element: str | Callable
     style: str | None = None
     
-    def element(self, context, *args, body=None) -> str:
-        return self._element(context, *args) if callable(self._element) else self._element.format(context, *args, comparison=body)
+    def element(self, context, q_args, a_args, body=None) -> str:
+        return self._element(context, q_args, a_args) if callable(self._element) else self._element.format(context, q_args, a_args, comparison=body)
 
 @dataclass
 class example:
@@ -27,10 +27,12 @@ class example_list:
     provided: example
 
 class input_kind:
-    def __init__(self, *, qfmt: card_format, afmt: card_format, compare_modes: dict[str, Callable], examples: list[str] | example_list, get_answer: str | None = "(typeAns) => typeAns.value"):
+    def __init__(self, *, qfmt: card_format, afmt: card_format, compare_modes: dict[str, Callable], q_params: dict[str, Callable] = {}, a_params: dict[str, Callable] = {}, examples: list[str] | example_list, get_answer: str | None = "(typeAns) => typeAns.value"):
         self.qfmt: card_format = qfmt
         self.afmt: card_format = afmt
         self.compare_modes: dict[str, Callable] = compare_modes
+        self.q_params: dict[str, Callable] = q_params
+        self.a_params: dict[str, Callable] = a_params
         self.examples: example_list = examples if examples is example_list else example_list(*examples)
         self.get_answer: str = get_answer # Must be a string expressed as a JavaScript function with a single HTMLElement parameter
 
@@ -40,7 +42,8 @@ class input_instance:
     field: str | None = None
     expected: str | None = None
     provided: str | None = None
-    args: list[str] = dataclasses.field(default_factory=list)
+    q_args: list[str] = dataclasses.field(default_factory=list)
+    a_args: list[str] = dataclasses.field(default_factory=list)
 
 linebreak = "__@MMTF#__" # needs to be unlikely value
 
@@ -63,6 +66,9 @@ def compare_multi_byline(thisInfo: input_instance, *, combining: bool = True):
 
     return "<code id=typeans>" + "<br>".join(comparison).replace('<br><span id=typearrow>&darr;</span><br>', '<span id=typearrow> → </span>').replace("<code id=typeans>", "").replace("</code>", "") + "</code>"
 
+def parameter_single_linear(output: str, style: str, thisInfo: input_instance, comparison: Callable):
+    return output.replace("<br><span id=typearrow>&darr;</span><br>", "<span id=typearrow> → </span>"), style
+
 @dataclass
 class input_kinds:
     single = input_kind(
@@ -73,6 +79,9 @@ class input_kinds:
         afmt = card_format("<div class='typeans-comparison typeans-comparison-single'>{comparison}</div>"),
         compare_modes = {
             "_": compare_single
+        },
+        a_params = {
+            "linear": parameter_single_linear
         },
         examples = ["example", "sample"]
     )
