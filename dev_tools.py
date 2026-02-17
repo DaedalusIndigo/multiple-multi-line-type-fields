@@ -19,15 +19,17 @@ class card_format:
 @dataclass
 class example:
     value: str
-    set_value: str = "(typeAns) => { typeAns.value = {}; }" # Must be a string expressed as a JavaScript function with a single HTMLElement parameter and one replacement field ("{}")
+    set_value: str = "(typeAns, i, value) => {{ typeAns.value = value; }}" # Must be a string expressed as a JavaScript function
+    make_read_only: str = "(typeAns) => {{ typeAns.readOnly = true; }}"
 
-@dataclass
 class example_list:
-    expected: example
-    provided: example
+    def __init__(self, expected: example | str, provided: example | str):
+        self.expected = expected if isinstance(expected, example) else example(expected)
+        self.provided = provided if isinstance(provided, example) else example(provided)
 
 class input_kind:
-    def __init__(self, *, qfmt: card_format, afmt: card_format, compare_modes: dict[str, Callable], q_params: dict[str, Callable] = {}, a_params: dict[str, Callable] = {}, examples: list[str] | example_list, get_answer: str | None = "(typeAns) => typeAns.value"):
+    def __init__(self, *, name: str, qfmt: card_format, afmt: card_format, compare_modes: dict[str, Callable], q_params: dict[str, Callable] = {}, a_params: dict[str, Callable] = {}, examples: list[str] | example_list, get_answer: str | None = "(typeAns) => typeAns.value"):
+        self.name: str = name
         self.qfmt: card_format = qfmt
         self.afmt: card_format = afmt
         self.compare_modes: dict[str, Callable] = compare_modes
@@ -45,6 +47,9 @@ class input_instance:
     q_args: list[str] = dataclasses.field(default_factory=list)
     a_args: list[str] = dataclasses.field(default_factory=list)
 
+class pseudo_reviewer:
+    pass
+
 linebreak = "__@MMTF#__" # needs to be unlikely value
 
 def compare_single(thisInfo: input_instance, *, combining: bool = True):
@@ -52,7 +57,7 @@ def compare_single(thisInfo: input_instance, *, combining: bool = True):
 
 def compare_multi_delimited(thisInfo: input_instance, *, combining: bool = True):
     provided = thisInfo.provided.replace("\n", linebreak)
-    expected = thisInfo.expected.replace("<br>", linebreak)
+    expected = thisInfo.expected.replace("\n", linebreak).replace("<br>", linebreak)
     return mw.col.compare_answer(expected, provided, combining).replace(linebreak, "<br>")
 
 def compare_multi_byline(thisInfo: input_instance, *, combining: bool = True):
@@ -72,6 +77,7 @@ def parameter_single_linear(output: str, style: str, thisInfo: input_instance, c
 @dataclass
 class input_kinds:
     single = input_kind(
+        name = "single",
         qfmt = card_format(
             '<input class="typeans typeans-single" id="typeans" type="text" onkeydown="_typeAnsPress(event);">',
             '.typeans-single {font-family: "Arial"; font-size: 20px; margin: auto;}'
@@ -83,9 +89,10 @@ class input_kinds:
         a_params = {
             "linear": parameter_single_linear
         },
-        examples = ["example", "sample"]
+        examples = ["sample", "example"]
     )
     multi = input_kind(
+        name = "multi",
         qfmt = card_format(
             '<textarea class="typeans typeans-multi" id="typeans" onkeydown="typeboxAnsPress(event);"></textarea>',
             '.typeans-multi {font-family: "Arial"; font-size: 20px; margin: auto; height: 300px; resize: none;}'
@@ -95,5 +102,5 @@ class input_kinds:
             "_": compare_multi_byline,
             "delimited": compare_multi_delimited
         },
-        examples = ["this\nis\nan\nexample", "that\nis\na\nsample"]
+        examples = ["that\nis\na\nsample", "this\nis\nan\nexample"]
     )

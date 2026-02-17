@@ -49,12 +49,10 @@ def MMTF_onTypedAnswer(self: reviewer.Reviewer, answers):
    self.typedAnswer = [] if answers is None else (json.loads(answers) or [])
    self._showAnswer()
 
-def MMTF_typeAnsQuestionFilter(self: reviewer.Reviewer, buf: str) -> str:
+def MMTF_typeAnsQuestionFilter(self: reviewer.Reviewer, buf: str, is_example: bool = False) -> str:
 
    # compatibility
    buf = re.sub(r"\[\[typebox:(?P<field>[^\]]+)\]\]", (lambda match: f"[[type:{match.group('field')}]][multi]"), buf)
-
-   self.typeAnsPat = re.compile(r"\[\[type:(?P<field>[^\]]+)\]\](?:\[(?P<args>[^\]]+)\])?")
 
    self.typeAnsInfo = []
    default_styles: str = ""
@@ -69,7 +67,7 @@ def MMTF_typeAnsQuestionFilter(self: reviewer.Reviewer, buf: str) -> str:
       self._combining = True
       clozeIdx = None
 
-      field = match.group("field")
+      field = thisInfo.field = match.group("field")
 
       thisInfo.q_args = match.group("args") or ""
       thisInfo.q_args = re.split(r'[,\s]+', thisInfo.q_args)
@@ -93,14 +91,17 @@ def MMTF_typeAnsQuestionFilter(self: reviewer.Reviewer, buf: str) -> str:
          thisInfo.a_args.append("nc")
          field = field.split(":")[1]
 
-      for f in self.card.note_type()["flds"]:
-         if f["name"] == field:
-            thisInfo.expected = self.card.note()[field]
-            if clozeIdx is not None:
-               # narrow to cloze
-               thisInfo.expected = self._contentForCloze(thisInfo.expected, clozeIdx)
-               
-            break
+      if is_example:
+         thisInfo.expected = thisInfo.kind.examples.expected.value
+      else:
+         for f in self.card.note_type()["flds"]:
+            if f["name"] == field:
+               thisInfo.expected = self.card.note()[field]
+               if clozeIdx is not None:
+                  # narrow to cloze
+                  thisInfo.expected = self._contentForCloze(thisInfo.expected, clozeIdx)
+                  
+               break
 
       if thisInfo.expected == "": # empty field
          buf = re.sub(self.typeAnsPat, "", buf, count=1)
@@ -119,12 +120,19 @@ def MMTF_typeAnsQuestionFilter(self: reviewer.Reviewer, buf: str) -> str:
          output = thisInfo.kind.qfmt.element(self, thisInfo.q_args, thisInfo.a_args)
          style = thisInfo.kind.qfmt.style
 
-         for arg in thisInfo.q_args[2:] if len(thisInfo.q_args) > 2 else []:
-            parameter = thisInfo.kind.q_params[arg] if arg in thisInfo.kind.q_params else None
-            if parameter:
-               output, style = parameter(output, style, thisInfo)
-
-         replace_pattern(output + "\n<br>")
+         p_found = None
+         for arg in thisInfo.q_args[1:] if len(thisInfo.q_args) > 1 else []:
+            if arg in thisInfo.kind.q_params:
+               output, style = thisInfo.kind.q_params[arg](output, style, thisInfo)
+            else:
+               p_found = arg
+               break
+         
+         if p_found is None:
+            replace_pattern(output + "\n<br>")
+         else:
+            replace_pattern(f"(MMTF) Could not find question-side parameter '{p_found}' of input kind '{thisInfo.kind.name}'")
+            continue
 
          if style is not None and style.strip() != "":
             default_styles += style + "\n\n"
@@ -147,10 +155,11 @@ def MMTF_typeAnsQuestionFilter(self: reviewer.Reviewer, buf: str) -> str:
    print(buf)
    return buf
 
-def MMTF_typeAnsAnswerFilter(self: reviewer.Reviewer, buf: str) -> str:
+def MMTF_typeAnsAnswerFilter(self: reviewer.Reviewer, buf: str, is_example: bool = False) -> str:
    note = self.card.note()
 
-   print("LOADED", self.typedAnswer)
+   if not is_example:
+      print("LOADED", self.typedAnswer)
 
    # compatibility
    buf = re.sub(r"\[\[typebox:(?P<field>[^\]]+)\]\]", (lambda match: f"[[type:{match.group('field')}]]"), buf)
@@ -167,29 +176,31 @@ def MMTF_typeAnsAnswerFilter(self: reviewer.Reviewer, buf: str) -> str:
       count[0] += 1
 
       thisInfo: input_instance = self.typeAnsInfo[i]
-      thisInfo.provided = self.typedAnswer[i]
+      thisInfo.provided = thisInfo.kind.examples.provided.value if is_example else self.typedAnswer[i]
 
       thisInfo.a_args = match.group("args") or ""
       thisInfo.a_args = re.split(r'[,\s]+', thisInfo.a_args)
 
       compare_name = thisInfo.a_args[0] if len(thisInfo.a_args) > 0 and thisInfo.a_args[0] != "" else "_"
-      thisCompare = thisInfo.kind.compare_modes[compare_name]
 
-      if thisCompare:
+      if compare_name in thisInfo.kind.compare_modes:
+         thisCompare = thisInfo.kind.compare_modes[compare_name]
+
          output = thisCompare(thisInfo, combining = ("nc" in thisInfo.a_args))
          style = thisInfo.kind.afmt.style
 
          for arg in thisInfo.a_args[1:] if len(thisInfo.a_args) > 1 else []:
-            parameter = thisInfo.kind.a_params[arg] if arg in thisInfo.kind.a_params else None
-            if parameter:
-               output, style = parameter(output, style, thisInfo, thisCompare)
+            if arg in thisInfo.kind.a_params:
+               output, style = thisInfo.kind.a_params[arg](output, style, thisInfo, thisCompare)
+            else:
+               return f"(MMTF) Could not find answer-side parameter '{arg}' of input kind '{thisInfo.kind.name}'"
          
          if style is not None and style.strip() != "":
             default_styles += style + "\n\n"
 
          return self.typeAnsInfo[i].kind.afmt.element(self, thisInfo.q_args, thisInfo.a_args, body = output if output else "(MMTF) Could not retrieve answer to compare")
       else:
-         return f"(MMTF) Could not find comparison mode '{compare_name}' of input kind"
+         return f"(MMTF) Could not find comparison mode '{compare_name}' of input kind '{thisInfo.kind.name}'"
       
    buf = re.sub(self.typeAnsPat, repl, buf) + """
    <style>
@@ -200,30 +211,31 @@ def MMTF_typeAnsAnswerFilter(self: reviewer.Reviewer, buf: str) -> str:
    print(buf)
    return buf
 
-def MMTF_maybeTextInput(self, txt: str, type: str = "q"):
-   if not ("[[type:" in txt or "[[typebox:"): return txt
-      
-   def typeansSingleRepl(match: re.Match) -> str:
-      if type == "q":
-         return "<center><input id='typeans' class='typeans typeans-single' type=text value='example' readonly></center>"
-      
-      return "<div class='typeans-comparison'>{}</div>".format(self.mw.col.compare_answer("example", "sample"))
-   def typeansMultiRepl(match: re.Match) -> str:
-      if type == "q":
-         return '<center><textarea class="typeans typeans-multi" id=typeans readonly>this\nis\nan\nexample</textarea></center>'
+def MMTF_maybeTextInput(self: clayout.CardLayout, txt: str, type: str = "q"):
+   if type == "q":
+      r = self.pseudo_reviewer = pseudo_reviewer()
+      r.card = self.rendered_card
+      r.typeAnsPat = reviewer.Reviewer.typeAnsPat
 
-      if match.group(2) == "contextual":
-         return self.mw.col.compare_answer("this__is__an__example", "that__is__a__sample").replace("__", "<b>")
-      else:
-         result = []
-         for comparison in [["this", "that"], ["is", "is"], ["an", "a"], ["example", "sample"]]:
-            result.append(self.mw.col.compare_answer(comparison[0], comparison[1]))
-
-         return '<div class="typeans-comparison"><code id=typeans>' + "<br>".join(result).replace("<br><span id=typearrow>&darr;</span><br>", "<span id=typearrow> → </span>").replace('<code id=typeans>', "").replace("</code>", "") + "</code></div>"
+      txt = MMTF_typeAnsQuestionFilter(r, txt, True)
+      txt += """
+      <script>
+      var typeAnsInfo = {};
+      document.querySelectorAll(".typeans").forEach((typeAns, i) => {{
+         if (typeAnsInfo[i] != null) {{
+            var example = typeAnsInfo[i].kind.examples.provided;
+            (new Function(`return ${{ example.make_read_only }};`))()(typeAns, i);
+            (new Function(`return ${{ example.set_value }};`))()(typeAns, i, example.value);
+         }}
+      }})
+      </script>
+      """.format(json.dumps(r.typeAnsInfo, default=lambda o: o.__dict__))
+   else:
+      txt = MMTF_typeAnsAnswerFilter(self.pseudo_reviewer, txt, True) 
+   
+   return txt
       
-   return re.sub(r'\[\[typebox:([^\]]+?)\](?:\[([^\]]+?)\])?\]', typeansMultiRepl, re.sub(r"\[\[type:.+?\]\]", typeansSingleRepl, txt))
-      
-
+reviewer.Reviewer.typeAnsPat = re.compile(r"\[\[type:(?P<field>[^\]]+)\]\](?:\[(?P<args>[^\]]+)\])?")
 reviewer.Reviewer.typeAnsQuestionFilter = MMTF_typeAnsQuestionFilter
 reviewer.Reviewer.typeAnsAnswerFilter = MMTF_typeAnsAnswerFilter
 reviewer.Reviewer._getTypedAnswer = MMTF_getTypedAnswer
