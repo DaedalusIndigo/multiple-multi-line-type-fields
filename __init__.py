@@ -178,8 +178,9 @@ def MMTF_typeAnsAnswerFilter(self: reviewer.Reviewer, buf: str, is_example: bool
       thisInfo: input_instance = self.typeAnsInfo[i]
       thisInfo.provided = thisInfo.kind.examples.provided.value if is_example else self.typedAnswer[i]
 
-      thisInfo.a_args = match.group("args") or ""
-      thisInfo.a_args = re.split(r'[,\s]+', thisInfo.a_args)
+      args = re.split(r'[,\s]+', match.group("args") or "")
+      args.extend(thisInfo.a_args)
+      thisInfo.a_args = args
 
       compare_name = thisInfo.a_args[0] if len(thisInfo.a_args) > 0 and thisInfo.a_args[0] != "" else "_"
 
@@ -192,7 +193,7 @@ def MMTF_typeAnsAnswerFilter(self: reviewer.Reviewer, buf: str, is_example: bool
          for arg in thisInfo.a_args[1:] if len(thisInfo.a_args) > 1 else []:
             if arg in thisInfo.kind.a_params:
                output, style = thisInfo.kind.a_params[arg](output, style, thisInfo, thisCompare)
-            else:
+            elif arg != "nc":
                return f"(MMTF) Could not find answer-side parameter '{arg}' of input kind '{thisInfo.kind.name}'"
          
          if style is not None and style.strip() != "":
