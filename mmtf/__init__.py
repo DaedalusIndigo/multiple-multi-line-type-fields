@@ -13,8 +13,6 @@ resources_path = Path(mw.addonManager.addonsFolder()) / addon_path / "resources"
 
 # Handle different card contexts (reviewer, card layout editor, card preview)
 def on_card_will_show(html, card, card_kind):
-   card_template = card.note().note_type()['tmpls'][card.ord]
-
    if card_kind == "reviewQuestion":
       html += """
       <script>
