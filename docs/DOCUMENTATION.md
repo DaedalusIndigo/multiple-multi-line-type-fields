@@ -28,7 +28,7 @@ A general type field *constructor* looks like this: `{{type:PREFIX:FIELD}}[KIND 
     - Arguments can be separated by whitespace (`a b c`) or commas (`a, b, c` or `a,b,c`).
     - **On the front**: the first argument is always the name of the input kind. Custom input kinds can implement other argument keywords (*parameters*) that affect the front view.
     - **On the back**: the first argument is always the name of the compare mode, the function that grades your answer. Similarly, custom input kinds can implement their own parameters that affect the grading or back view.
-    - If a directive has no spec (`{{type:FIELD}}`), or if a spec is empty (`{{type:FIELD}}[]`), the input kind and the compare mode are assumed to be `single` and `_`, respectively.
+    - If a directive has no spec (`{{type:FIELD}}`), or if a spec is empty (`{{type:FIELD}}[ ]`), the input kind and the compare mode are assumed to be `hybrid` and `_`, respectively. `_` also works as shorthand for `hybrid`.
 
 <br>
 
@@ -39,17 +39,24 @@ You may also use `[[typebox:FIELD]]` instead of `{{type:FIELD}}[multi]` to maint
 ## Using Input Kinds
 Input kinds have three main attributes: format, answer retrieval, and compare modes. Format determines how inputs appear. Answer retrieval tells MMTF how to get typed answers from visual elements before the card is flipped. Compare modes tell MMTF how to grade those answers. It is necessary that the default compare mode be named `_`.
 
-There are two built-in input kinds: `single` and `multi`.
+There are three built-in input kinds: `single`, `multi`, and `hybrid`.
 - `single` replicates the functionality of the native Anki type field. It is displayed as an HTML `input` element of `type` `"text"`. You can only type one line of text.
     - One compare mode:
         - `_`: reuses vanilla Anki grading.
-    - One additional parameter:
+    - One answer-side parameter:
         - `linear`: removes line breaks between expected and provided text, flowing left to right instead of up to down.
 
 - `multi` is displayed as an HTML `textarea` element. You can type multiple lines of text and break lines with <kbd>Shift + Enter</kbd>.
     - Two compare modes:
         - `_`: compares the expected and provided text line-by-line, splitting them with a `→` symbol. This is best for a clean list.
         - `delimited`: compares the expected and provided text character-by-character, replacing line-breaks with an uncommon delimiter (`__@MMTF$__`) to prevent Anki from stripping them. This is best for a textual excerpt or code snippet.
+
+- `hybrid` is a *pseudo-kind*. If the expected answer has any line breaks, it converts itself to `multi`. If not, it becomes `single`.
+    - You may use any compare mode or parameters from `single` or `multi`.
+
+There are also some parameters that belong to all type fields. For the following, "q" means "question-side," and "a" means "answer-side."
+- `c[NUMBER]` (q): narrows the `expected` answer to cloze deletion of number `[NUMBER]` instead of the card order number.
+- `!s` (q, a): enables "strict mode," which throws an error if met with an invalid argument.
 
 <br>
 

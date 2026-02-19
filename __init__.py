@@ -6,6 +6,7 @@ from pathlib import Path
 from aqt import gui_hooks, reviewer, clayout, mw, utils
 from .hooks import MMTF_hooks
 from .dev_tools import *
+from pprint import pprint
 
 addon_path = mw.addonManager.addon_from_module(__name__)
 resources_path = Path(mw.addonManager.addonsFolder()) / addon_path / "resources"
@@ -30,6 +31,9 @@ def on_card_will_show(html, card, card_kind):
    
 gui_hooks.card_will_show.append(on_card_will_show)
 
+def to_dict(obj: Any):
+   return obj.__dict__
+
 def MMTF_getTypedAnswer(self: reviewer.Reviewer):
    self.web.evalWithCallback("""(() => {{
       var typeAnsInfo = {};
@@ -41,13 +45,18 @@ def MMTF_getTypedAnswer(self: reviewer.Reviewer):
       }})
       return JSON.stringify(answers);
    }})()
-   """.format(json.dumps(self.typeAnsInfo, default=lambda o: o.__dict__)),
+   """.format(json.dumps(self.typeAnsInfo, default=to_dict)),
    self._onTypedAnswer)
 
 def MMTF_onTypedAnswer(self: reviewer.Reviewer, answers):
    print("RETRIEVED", answers)
    self.typedAnswer = [] if answers is None else (json.loads(answers) or [])
    self._showAnswer()
+
+def is_in(l: list, element: Any):
+   was = element in l
+   if was: l.remove(element)
+   return was
 
 def MMTF_typeAnsQuestionFilter(self: reviewer.Reviewer, buf: str, is_example: bool = False) -> str:
 
@@ -60,7 +69,7 @@ def MMTF_typeAnsQuestionFilter(self: reviewer.Reviewer, buf: str, is_example: bo
       def replace_pattern(replacement: str) -> None:
          nonlocal buf
          buf = re.sub(self.typeAnsPat, replacement, buf, count=1)
-      
+
       thisInfo = input_instance()
       self.typeAnsInfo.append(thisInfo)
 
@@ -71,13 +80,20 @@ def MMTF_typeAnsQuestionFilter(self: reviewer.Reviewer, buf: str, is_example: bo
 
       thisInfo.q_args = match.group("args") or ""
       thisInfo.q_args = re.split(r'[,\s]+', thisInfo.q_args)
+      for arg in thisInfo.q_args[1:]:
+         if arg[0:1] == "c" and arg[1:2] != "0" and arg[2:].isdigit():
+            clozeIdx = arg[1:]
+            thisInfo.q_args.remove(arg)
+            break
 
-      kind_name = thisInfo.q_args[0]
+      kind_name = thisInfo.q_args.pop(0)
       if kind_name is None or kind_name.strip() == "" or kind_name == "_":
-         kind_name = "single"
+         kind_name = "hybrid"
+
+      strict = strict = is_in(thisInfo.q_args, "!s")
 
       try:
-         thisInfo.kind = getattr(input_kinds, kind_name)
+         thisInfo.kind = input_kinds._get(kind_name)
       except Exception:
          replace_pattern(f"(MMTF) Could not find input kind '{kind_name}'") # [TRANSLATION REMINDER]
          continue
@@ -85,12 +101,23 @@ def MMTF_typeAnsQuestionFilter(self: reviewer.Reviewer, buf: str, is_example: bo
       # if it's a cloze, extract data
       if field.startswith("cloze:"):
          # get field and cloze position [HOOK REMINDER]
-         clozeIdx = self.card.ord + 1
+         if clozeIdx is None:
+            clozeIdx = self.card.ord + 1
+
          field = field.split(":")[1]
       if field.startswith("nc:"):
          thisInfo.a_args.append("nc")
          field = field.split(":")[1]
+      
+      if thisInfo.kind.on_render.question is not None:
+         try:
+            if callable(thisInfo.kind.on_render.question):
+               thisInfo.kind.on_render.question(thisInfo, is_example)
+         except Exception as e:
+            replace_pattern(f"(MMTF) An exception occurred in executing the 'on_render' method of input kind '{kind_name}':<br>{type(str(e)).__name__}: {e}")
+            continue
 
+      # Check if preview
       if is_example:
          thisInfo.expected = thisInfo.kind.examples.expected.value
       else:
@@ -103,7 +130,7 @@ def MMTF_typeAnsQuestionFilter(self: reviewer.Reviewer, buf: str, is_example: bo
                   
                break
 
-      if thisInfo.expected == "": # empty field
+      if thisInfo.expected == "" and not is_example: # empty field
          buf = re.sub(self.typeAnsPat, "", buf, count=1)
       elif thisInfo.expected is None: # no field match
          if clozeIdx:
@@ -111,7 +138,7 @@ def MMTF_typeAnsQuestionFilter(self: reviewer.Reviewer, buf: str, is_example: bo
          else:
             replace_pattern(utils.tr.studying_type_answer_unknown_field(val=field))
          continue
-      
+
       if thisInfo.kind is None:
          replace_pattern(f"(MMTF) Could not find input kind '{kind_name}'") # [TRANSLATION REMINDER]
          continue
@@ -120,15 +147,16 @@ def MMTF_typeAnsQuestionFilter(self: reviewer.Reviewer, buf: str, is_example: bo
          output = thisInfo.kind.qfmt.element(self, thisInfo.q_args, thisInfo.a_args)
          style = thisInfo.kind.qfmt.style
 
-         p_found = None
-         for arg in thisInfo.q_args[1:] if len(thisInfo.q_args) > 1 else []:
+         p_found = ""
+         for arg in thisInfo.q_args:
             if arg in thisInfo.kind.q_params:
                output, style = thisInfo.kind.q_params[arg](output, style, thisInfo)
-            else:
+               print("OOOO", arg, output)
+            elif strict:
                p_found = arg
                break
          
-         if p_found is None:
+         if p_found == "":
             replace_pattern(output + "\n<br>")
          else:
             replace_pattern(f"(MMTF) Could not find question-side parameter '{p_found}' of input kind '{thisInfo.kind.name}'")
@@ -138,7 +166,7 @@ def MMTF_typeAnsQuestionFilter(self: reviewer.Reviewer, buf: str, is_example: bo
             default_styles += style + "\n\n"
 
       except Exception as e:
-         replace_pattern(f"(MMTF) An exception occurred in retrieving the element of input kind '{kind_name}:\n{type(str(e)).__name__}: {e}'")
+         replace_pattern(f"(MMTF) An exception occurred in retrieving the element of input kind '{kind_name}':<br>{type(str(e)).__name__}: {e}")
 
 
    # [HOOK REMINDER]
@@ -182,18 +210,29 @@ def MMTF_typeAnsAnswerFilter(self: reviewer.Reviewer, buf: str, is_example: bool
       args.extend(thisInfo.a_args)
       thisInfo.a_args = args
 
-      compare_name = thisInfo.a_args[0] if len(thisInfo.a_args) > 0 and thisInfo.a_args[0] != "" else "_"
+      if thisInfo.kind.on_render.answer is not None:
+         try:
+            if callable(thisInfo.kind.on_render.answer):
+               thisInfo.kind.on_render.answer(thisInfo, is_example)
+         except Exception as e:
+            replace_pattern(f"(MMTF) An exception occurred in executing the 'on_render' method of input kind '{thisInfo.kind.name}':<br>{type(str(e)).__name__}: {e}")
+
+
+      compare_name = thisInfo.a_args.pop(0) if len(thisInfo.a_args) > 0 and thisInfo.a_args[0] != "" else "_"
 
       if compare_name in thisInfo.kind.compare_modes:
-         thisCompare = thisInfo.kind.compare_modes[compare_name]
+         thisCompare = thisInfo.compare = thisInfo.kind.compare_modes[compare_name]
 
-         output = thisCompare(thisInfo, combining = ("nc" in thisInfo.a_args))
+         strict = is_in(thisInfo.a_args, "!s")
+         do_compare = not is_in(thisInfo.a_args, "nc")
+
+         output = thisCompare(thisInfo, combining = do_compare)
          style = thisInfo.kind.afmt.style
 
-         for arg in thisInfo.a_args[1:] if len(thisInfo.a_args) > 1 else []:
+         for arg in thisInfo.a_args:
             if arg in thisInfo.kind.a_params:
                output, style = thisInfo.kind.a_params[arg](output, style, thisInfo, thisCompare)
-            elif arg != "nc":
+            elif strict:
                return f"(MMTF) Could not find answer-side parameter '{arg}' of input kind '{thisInfo.kind.name}'"
          
          if style is not None and style.strip() != "":
@@ -219,6 +258,7 @@ def MMTF_maybeTextInput(self: clayout.CardLayout, txt: str, type: str = "q"):
       r.typeAnsPat = reviewer.Reviewer.typeAnsPat
 
       txt = MMTF_typeAnsQuestionFilter(r, txt, True)
+      pprint(r.typeAnsInfo)
       txt += """
       <script>
       var typeAnsInfo = {};
@@ -230,7 +270,7 @@ def MMTF_maybeTextInput(self: clayout.CardLayout, txt: str, type: str = "q"):
          }}
       }})
       </script>
-      """.format(json.dumps(r.typeAnsInfo, default=lambda o: o.__dict__))
+      """.format(json.dumps(r.typeAnsInfo, default=to_dict))
    else:
       txt = MMTF_typeAnsAnswerFilter(self.pseudo_reviewer, txt, True) 
    
